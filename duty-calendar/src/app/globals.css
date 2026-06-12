@@ -1,0 +1,21 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #f5f7fb;
+  color: #111;
+  font-family: Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.fc .fc-toolbar-title {
+  font-size: 1.2rem;
+}
+
+.fc .fc-daygrid-event {
+  background: #2563eb;
+  border: none;
+  padding: 2px 4px;
+}
