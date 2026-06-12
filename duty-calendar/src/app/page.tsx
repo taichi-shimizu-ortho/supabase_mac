@@ -19,6 +19,9 @@ export default function Home() {
   const [formData, setFormData] = useState({ doctorId: '', shiftTypeId: '', dutyDate: '', note: '' })
   const [submitting, setSubmitting] = useState(false)
 
+  // カレンダー表示月
+  const [displayMonth, setDisplayMonth] = useState(() => new Date().toISOString().slice(0, 7))
+
   // ログイン処理
   useEffect(() => {
     const checkSession = async () => {
@@ -140,9 +143,8 @@ export default function Home() {
     }))
   }, [assignments])
 
-  const currentMonth = new Date().toISOString().slice(0, 7)
   const monthlyCounts = useMemo(() => {
-    const filtered = assignments.filter((a) => a.duty_date.startsWith(currentMonth))
+    const filtered = assignments.filter((a) => a.duty_date.startsWith(displayMonth))
     const countMap: Record<string, Record<string, number>> = {}
 
     for (const a of filtered) {
@@ -153,7 +155,7 @@ export default function Home() {
     }
 
     return countMap
-  }, [assignments, currentMonth])
+  }, [assignments, displayMonth])
 
   if (!session) {
     return (
@@ -227,6 +229,11 @@ export default function Home() {
               initialView="dayGridMonth"
               height="auto"
               events={calendarEvents}
+              datesSet={(info) => {
+                const year = info.start.getFullYear()
+                const month = String(info.start.getMonth() + 1).padStart(2, '0')
+                setDisplayMonth(`${year}-${month}`)
+              }}
             />
           </div>
 
@@ -319,9 +326,9 @@ export default function Home() {
 
           {/* 月別集計 */}
           <section style={{ background: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e5e7eb' }}>
-            <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>📊 {currentMonth} の集計</h2>
+            <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>📊 {displayMonth} の集計</h2>
             {Object.keys(monthlyCounts).length === 0 ? (
-              <p style={{ color: '#999' }}>今月のデータはまだありません。</p>
+              <p style={{ color: '#999' }}>選択月のデータはまだありません。</p>
             ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
