@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import { supabase, type Profile, type ShiftType, type Assignment } from '@/lib/supabase'
 
 export default function Home() {
+  const calendarRef = useRef<FullCalendar>(null)
   const [session, setSession] = useState(false)
   const [user, setUser] = useState<Profile | null>(null)
   const [assignments, setAssignments] = useState<Assignment[]>([])
@@ -51,6 +52,15 @@ export default function Home() {
 
     checkSession()
   }, [])
+
+  // displayMonth が変わったときにカレンダーも同期
+  useEffect(() => {
+    if (calendarRef.current) {
+      const [year, month] = displayMonth.split('-')
+      const date = new Date(parseInt(year), parseInt(month) - 1, 1)
+      calendarRef.current.getApi().gotoDate(date)
+    }
+  }, [displayMonth])
 
   const fetchData = async () => {
     setLoading(true)
@@ -222,18 +232,58 @@ export default function Home() {
         <p>読み込み中...</p>
       ) : (
         <>
+          {/* 月選択ボタン */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <button
+              onClick={() => {
+                const [year, month] = displayMonth.split('-')
+                const date = new Date(parseInt(year), parseInt(month) - 2)
+                const newYear = date.getFullYear()
+                const newMonth = String(date.getMonth() + 1).padStart(2, '0')
+                setDisplayMonth(`${newYear}-${newMonth}`)
+              }}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '4px',
+                background: '#3b82f6',
+                color: 'white',
+                border: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              ◀ 前月
+            </button>
+            <h2 style={{ fontSize: '1.2rem', margin: 0 }}>📅 {displayMonth}</h2>
+            <button
+              onClick={() => {
+                const [year, month] = displayMonth.split('-')
+                const date = new Date(parseInt(year), parseInt(month))
+                const newYear = date.getFullYear()
+                const newMonth = String(date.getMonth() + 1).padStart(2, '0')
+                setDisplayMonth(`${newYear}-${newMonth}`)
+              }}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '4px',
+                background: '#3b82f6',
+                color: 'white',
+                border: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              翌月 ▶
+            </button>
+          </div>
+
           {/* カレンダー */}
           <div style={{ background: '#fff', padding: '16px', borderRadius: '12px', marginBottom: '24px', border: '1px solid #e5e7eb' }}>
             <FullCalendar
+              ref={calendarRef}
               plugins={[dayGridPlugin]}
               initialView="dayGridMonth"
               height="auto"
               events={calendarEvents}
-              datesSet={(info) => {
-                const year = info.start.getFullYear()
-                const month = String(info.start.getMonth() + 1).padStart(2, '0')
-                setDisplayMonth(`${year}-${month}`)
-              }}
+              headerToolbar={false}
             />
           </div>
 
