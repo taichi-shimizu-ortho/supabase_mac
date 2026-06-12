@@ -2,7 +2,7 @@
 """シフト管理 - 割り当ての追加・削除・確認"""
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from supabase import create_client
 import click
@@ -29,11 +29,16 @@ def list_assignments(month):
         month = datetime.now().strftime("%Y-%m")
 
     try:
+        # 来月の初日を計算
+        month_dt = datetime.strptime(f"{month}-01", "%Y-%m-%d")
+        next_month = month_dt + timedelta(days=32)
+        next_month_str = next_month.strftime("%Y-%m-01")
+
         # duty_date が該当月のものを取得
         res = supabase.table("assignments").select(
             "id, doctor_id, shift_type_id, duty_date, note, " +
-            "profiles(full_name), shift_types(name)"
-        ).gte("duty_date", f"{month}-01").lt("duty_date", f"{month}-32").order(
+            "profiles!assignments_doctor_id_fkey(full_name), shift_types(name)"
+        ).gte("duty_date", f"{month}-01").lt("duty_date", next_month_str).order(
             "duty_date"
         ).execute()
 
@@ -136,11 +141,16 @@ def doctor_shifts(doctor, month):
             return
         doctor_id = doc_res.data[0]["id"]
 
+        # 来月の初日を計算
+        month_dt = datetime.strptime(f"{month}-01", "%Y-%m-%d")
+        next_month = month_dt + timedelta(days=32)
+        next_month_str = next_month.strftime("%Y-%m-01")
+
         # シフトを検索
         res = supabase.table("assignments").select(
             "id, duty_date, note, shift_types(name)"
         ).eq("doctor_id", doctor_id).gte("duty_date", f"{month}-01").lt(
-            "duty_date", f"{month}-32"
+            "duty_date", next_month_str
         ).order("duty_date").execute()
 
         click.echo(f"\n📅 {doctor} - {month} のシフト ({len(res.data)} 件)")

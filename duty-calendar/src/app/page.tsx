@@ -3,81 +3,225 @@
 import { useEffect, useMemo, useState } from 'react'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
-import { supabase } from '@/lib/supabase'
-
-type ShiftRow = {
-  id: number
-  staff_name: string
-  shift_date: string
-  shift_type: string
-  note: string | null
-}
+import { supabase, type Profile, type ShiftType, type Assignment } from '@/lib/supabase'
 
 export default function Home() {
-  const [rows, setRows] = useState<ShiftRow[]>([])
+  const [session, setSession] = useState(false)
+  const [user, setUser] = useState<Profile | null>(null)
+  const [assignments, setAssignments] = useState<Assignment[]>([])
+  const [doctors, setDoctors] = useState<Profile[]>([])
+  const [shiftTypes, setShiftTypes] = useState<ShiftType[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>('')
 
+  // 新規割り当てフォーム
+  const [showForm, setShowForm] = useState(false)
+  const [formData, setFormData] = useState({ doctorId: '', shiftTypeId: '', dutyDate: '', note: '' })
+  const [submitting, setSubmitting] = useState(false)
+
+  // ログイン処理
   useEffect(() => {
-    const fetchShifts = async () => {
-      setLoading(true)
-      setError('')
-
-      const { data, error } = await supabase
-        .from('on_call_shifts')
-        .select('id, staff_name, shift_date, shift_type, note')
-        .order('shift_date', { ascending: true })
-
-      if (error) {
-        setError(error.message)
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getSession()
+      if (!data.session) {
+        setSession(false)
         setLoading(false)
         return
       }
 
-      setRows((data ?? []) as ShiftRow[])
-      setLoading(false)
+      setSession(true)
+
+      // ユーザープロフィール取得
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', data.session.user.id)
+        .single()
+
+      if (profileData) {
+        setUser(profileData)
+      }
+
+      // データ取得
+      await fetchData()
     }
 
-    fetchShifts()
+    checkSession()
   }, [])
 
-  const calendarEvents = useMemo(() => {
-    return rows.map((row) => ({
-      id: String(row.id),
-      title: `${row.staff_name} (${row.shift_type})`,
-      start: row.shift_date,
-      allDay: true,
-    }))
-  }, [rows])
+  const fetchData = async () => {
+    setLoading(true)
+    try {
+      // 医師一覧
+      const { data: doctorsData } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('is_active', true)
 
-  const currentMonth = new Date().toISOString().slice(0, 7)
+      setDoctors(doctorsData || [])
 
-  const monthlyCounts = useMemo(() => {
-    const filtered = rows.filter((row) => row.shift_date.startsWith(currentMonth))
-    const countMap: Record<string, number> = {}
+      // シフト種別
+      const { data: shiftsData } = await supabase
+        .from('shift_types')
+        .select('*')
 
-    for (const row of filtered) {
-      countMap[row.staff_name] = (countMap[row.staff_name] ?? 0) + 1
+      setShiftTypes(shiftsData || [])
+
+      // 割り当て
+      const { data: assignmentsData } = await supabase
+        .from('assignments')
+        .select('*, profiles!assignments_doctor_id_fkey(full_name), shift_types(name, color)')
+        .order('duty_date', { ascending: true })
+
+      setAssignments(assignmentsData || [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'エラーが発生しました')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // ログイン
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const email = (e.currentTarget.elements.namedItem('email') as HTMLInputElement).value
+    const password = (e.currentTarget.elements.namedItem('password') as HTMLInputElement).value
+
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) {
+      setError(error.message)
+      return
     }
 
-    return Object.entries(countMap)
-      .map(([staff_name, count]) => ({ staff_name, count }))
-      .sort((a, b) => b.count - a.count || a.staff_name.localeCompare(b.staff_name))
-  }, [rows, currentMonth])
+    // 再度セッション確認
+    const { data } = await supabase.auth.getSession()
+    if (data.session) {
+      setSession(true)
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', data.session.user.id)
+        .single()
+      if (profileData) setUser(profileData)
+      await fetchData()
+    }
+  }
+
+  // 勤務追加
+  const handleAddAssignment = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSubmitting(true)
+
+    const { error } = await supabase.from('assignments').insert({
+      doctor_id: formData.doctorId,
+      shift_type_id: parseInt(formData.shiftTypeId),
+      duty_date: formData.dutyDate,
+      note: formData.note || null,
+    })
+
+    if (error) {
+      setError(error.message)
+    } else {
+      setFormData({ doctorId: '', shiftTypeId: '', dutyDate: '', note: '' })
+      setShowForm(false)
+      await fetchData()
+    }
+
+    setSubmitting(false)
+  }
+
+  const calendarEvents = useMemo(() => {
+    return assignments.map((a) => ({
+      id: a.id,
+      title: `${a.profiles?.full_name} (${a.shift_types?.name})`,
+      start: a.duty_date,
+      allDay: true,
+      backgroundColor: a.shift_types?.color || '#3b82f6',
+    }))
+  }, [assignments])
+
+  const currentMonth = new Date().toISOString().slice(0, 7)
+  const monthlyCounts = useMemo(() => {
+    const filtered = assignments.filter((a) => a.duty_date.startsWith(currentMonth))
+    const countMap: Record<string, Record<string, number>> = {}
+
+    for (const a of filtered) {
+      const name = a.profiles?.full_name || '不明'
+      const shiftName = a.shift_types?.name || '不明'
+      if (!countMap[name]) countMap[name] = {}
+      countMap[name][shiftName] = (countMap[name][shiftName] || 0) + 1
+    }
+
+    return countMap
+  }, [assignments, currentMonth])
+
+  if (!session) {
+    return (
+      <div style={{ maxWidth: 400, margin: '100px auto', padding: '24px' }}>
+        <h1 style={{ fontSize: '1.5rem', marginBottom: '24px' }}>医師シフト管理</h1>
+        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <input
+            type="email"
+            name="email"
+            placeholder="メールアドレス"
+            required
+            style={{ padding: '12px', borderRadius: '8px', border: '1px solid #ddd' }}
+          />
+          <input
+            type="password"
+            name="password"
+            placeholder="パスワード"
+            required
+            style={{ padding: '12px', borderRadius: '8px', border: '1px solid #ddd' }}
+          />
+          <button
+            type="submit"
+            style={{
+              padding: '12px',
+              borderRadius: '8px',
+              background: '#3b82f6',
+              color: 'white',
+              border: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            ログイン
+          </button>
+          {error && <p style={{ color: 'red' }}>{error}</p>}
+        </form>
+      </div>
+    )
+  }
 
   return (
-    <main style={{ maxWidth: 1100, margin: '0 auto', padding: '24px' }}>
-      <h1 style={{ fontSize: '2rem', marginBottom: '8px' }}>当直管理カレンダー</h1>
-      <p style={{ marginBottom: '24px', color: '#555' }}>
-        Supabase から当直データを読み込み、月間カレンダーと当月回数を表示します。
-      </p>
+    <main style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+        <h1 style={{ fontSize: '2rem' }}>🏥 医師シフト管理</h1>
+        <div style={{ textAlign: 'right' }}>
+          <p style={{ fontSize: '0.9rem', color: '#666' }}>{user?.full_name}</p>
+          <button
+            onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
+            style={{
+              padding: '8px 16px',
+              borderRadius: '4px',
+              background: '#f3f4f6',
+              border: '1px solid #ddd',
+              cursor: 'pointer',
+            }}
+          >
+            ログアウト
+          </button>
+        </div>
+      </div>
 
-      {loading && <p>読み込み中...</p>}
-      {error && <p style={{ color: 'crimson' }}>Error: {error}</p>}
+      {error && <p style={{ color: 'crimson', marginBottom: '16px' }}>Error: {error}</p>}
 
-      {!loading && !error && (
+      {loading ? (
+        <p>読み込み中...</p>
+      ) : (
         <>
-          <div style={{ background: '#fff', padding: '16px', borderRadius: '12px', marginBottom: '24px' }}>
+          {/* カレンダー */}
+          <div style={{ background: '#fff', padding: '16px', borderRadius: '12px', marginBottom: '24px', border: '1px solid #e5e7eb' }}>
             <FullCalendar
               plugins={[dayGridPlugin]}
               initialView="dayGridMonth"
@@ -86,25 +230,126 @@ export default function Home() {
             />
           </div>
 
-          <section style={{ background: '#fff', padding: '16px', borderRadius: '12px' }}>
-            <h2 style={{ fontSize: '1.25rem', marginBottom: '12px' }}>{currentMonth} の当直回数</h2>
-            {monthlyCounts.length === 0 ? (
-              <p>今月のデータはまだありません。</p>
+          {/* 管理者: 勤務追加フォーム */}
+          {user?.role === 'admin' && (
+            <div style={{ background: '#fef3c7', padding: '16px', borderRadius: '12px', marginBottom: '24px', border: '1px solid #fcd34d' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: showForm ? '16px' : 0 }}>
+                <h2 style={{ fontSize: '1.1rem' }}>👨‍⚕️ 勤務を追加</h2>
+                <button
+                  onClick={() => setShowForm(!showForm)}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '4px',
+                    background: '#f59e0b',
+                    color: 'white',
+                    border: 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {showForm ? 'キャンセル' : '追加'}
+                </button>
+              </div>
+
+              {showForm && (
+                <form onSubmit={handleAddAssignment} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <select
+                    value={formData.doctorId}
+                    onChange={(e) => setFormData({ ...formData, doctorId: e.target.value })}
+                    required
+                    style={{ padding: '12px', borderRadius: '4px', border: '1px solid #ddd' }}
+                  >
+                    <option value="">医師を選択</option>
+                    {doctors.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.full_name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={formData.shiftTypeId}
+                    onChange={(e) => setFormData({ ...formData, shiftTypeId: e.target.value })}
+                    required
+                    style={{ padding: '12px', borderRadius: '4px', border: '1px solid #ddd' }}
+                  >
+                    <option value="">シフト種別を選択</option>
+                    {shiftTypes.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <input
+                    type="date"
+                    value={formData.dutyDate}
+                    onChange={(e) => setFormData({ ...formData, dutyDate: e.target.value })}
+                    required
+                    style={{ padding: '12px', borderRadius: '4px', border: '1px solid #ddd' }}
+                  />
+
+                  <input
+                    type="text"
+                    placeholder="備考（オプション）"
+                    value={formData.note}
+                    onChange={(e) => setFormData({ ...formData, note: e.target.value })}
+                    style={{ padding: '12px', borderRadius: '4px', border: '1px solid #ddd' }}
+                  />
+
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    style={{
+                      gridColumn: '1 / -1',
+                      padding: '12px',
+                      borderRadius: '4px',
+                      background: '#10b981',
+                      color: 'white',
+                      border: 'none',
+                      cursor: submitting ? 'not-allowed' : 'pointer',
+                      opacity: submitting ? 0.5 : 1,
+                    }}
+                  >
+                    {submitting ? '保存中...' : '保存'}
+                  </button>
+                </form>
+              )}
+            </div>
+          )}
+
+          {/* 月別集計 */}
+          <section style={{ background: '#fff', padding: '16px', borderRadius: '12px', border: '1px solid #e5e7eb' }}>
+            <h2 style={{ fontSize: '1.1rem', marginBottom: '16px' }}>📊 {currentMonth} の集計</h2>
+            {Object.keys(monthlyCounts).length === 0 ? (
+              <p style={{ color: '#999' }}>今月のデータはまだありません。</p>
             ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
-                  <tr>
-                    <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #ddd' }}>氏名</th>
-                    <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #ddd' }}>回数</th>
+                  <tr style={{ background: '#f3f4f6' }}>
+                    <th style={{ textAlign: 'left', padding: '12px', borderBottom: '2px solid #ddd' }}>医師</th>
+                    {shiftTypes.map((s) => (
+                      <th key={s.id} style={{ textAlign: 'left', padding: '12px', borderBottom: '2px solid #ddd' }}>
+                        {s.name}
+                      </th>
+                    ))}
+                    <th style={{ textAlign: 'left', padding: '12px', borderBottom: '2px solid #ddd' }}>合計</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {monthlyCounts.map((item) => (
-                    <tr key={item.staff_name}>
-                      <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{item.staff_name}</td>
-                      <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>{item.count}</td>
-                    </tr>
-                  ))}
+                  {Object.entries(monthlyCounts).map(([doctorName, counts]) => {
+                    const total = Object.values(counts).reduce((a, b) => a + b, 0)
+                    return (
+                      <tr key={doctorName}>
+                        <td style={{ padding: '12px', borderBottom: '1px solid #eee' }}>{doctorName}</td>
+                        {shiftTypes.map((s) => (
+                          <td key={s.id} style={{ padding: '12px', borderBottom: '1px solid #eee' }}>
+                            {counts[s.name] || 0}
+                          </td>
+                        ))}
+                        <td style={{ padding: '12px', borderBottom: '1px solid #eee', fontWeight: 'bold' }}>{total}</td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             )}
