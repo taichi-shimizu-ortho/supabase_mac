@@ -146,7 +146,9 @@ export default function Home() {
   const calendarEvents = useMemo(() => {
     return assignments.map((a) => ({
       id: a.id,
-      title: `${a.profiles?.full_name} (${a.shift_types?.name})`,
+      title: a.note
+        ? `${a.profiles?.full_name} (${a.shift_types?.name}) - ${a.note}`
+        : `${a.profiles?.full_name} (${a.shift_types?.name})`,
       start: a.duty_date,
       allDay: true,
       backgroundColor: a.shift_types?.color || '#3b82f6',
