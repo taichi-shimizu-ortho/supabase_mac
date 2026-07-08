@@ -24,12 +24,14 @@ html, body {
 
 @media (max-width: 640px) {
   .fc .fc-daygrid-event {
-    font-size: 0.7rem;
-    line-height: 1.2;
+    font-size: 0.55rem;
+    line-height: 1.1;
+    padding: 1px 2px;
   }
 
   .fc .fc-daygrid-day-number {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
+    padding: 2px;
   }
 
   .fc .fc-toolbar-title {
