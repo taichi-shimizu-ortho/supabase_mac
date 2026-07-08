@@ -382,35 +382,37 @@ export default function Home() {
             {Object.keys(monthlyCounts).length === 0 ? (
               <p style={{ color: '#999' }}>選択月のデータはまだありません。</p>
             ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ background: '#f3f4f6' }}>
-                    <th style={{ textAlign: 'left', padding: '12px', borderBottom: '2px solid #ddd' }}>医師</th>
-                    {shiftTypes.map((s) => (
-                      <th key={s.id} style={{ textAlign: 'left', padding: '12px', borderBottom: '2px solid #ddd' }}>
-                        {s.name}
-                      </th>
-                    ))}
-                    <th style={{ textAlign: 'left', padding: '12px', borderBottom: '2px solid #ddd' }}>合計</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(monthlyCounts).map(([doctorName, counts]) => {
-                    const total = Object.values(counts).reduce((a, b) => a + b, 0)
-                    return (
-                      <tr key={doctorName}>
-                        <td style={{ padding: '12px', borderBottom: '1px solid #eee' }}>{doctorName}</td>
-                        {shiftTypes.map((s) => (
-                          <td key={s.id} style={{ padding: '12px', borderBottom: '1px solid #eee' }}>
-                            {counts[s.name] || 0}
-                          </td>
-                        ))}
-                        <td style={{ padding: '12px', borderBottom: '1px solid #eee', fontWeight: 'bold' }}>{total}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: '#f3f4f6' }}>
+                      <th style={{ textAlign: 'left', padding: '12px', borderBottom: '2px solid #ddd', whiteSpace: 'nowrap' }}>医師</th>
+                      {shiftTypes.map((s) => (
+                        <th key={s.id} style={{ textAlign: 'left', padding: '12px', borderBottom: '2px solid #ddd', whiteSpace: 'nowrap' }}>
+                          {s.name}
+                        </th>
+                      ))}
+                      <th style={{ textAlign: 'left', padding: '12px', borderBottom: '2px solid #ddd', whiteSpace: 'nowrap' }}>合計</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(monthlyCounts).map(([doctorName, counts]) => {
+                      const total = Object.values(counts).reduce((a, b) => a + b, 0)
+                      return (
+                        <tr key={doctorName}>
+                          <td style={{ padding: '12px', borderBottom: '1px solid #eee', whiteSpace: 'nowrap' }}>{doctorName}</td>
+                          {shiftTypes.map((s) => (
+                            <td key={s.id} style={{ padding: '12px', borderBottom: '1px solid #eee' }}>
+                              {counts[s.name] || 0}
+                            </td>
+                          ))}
+                          <td style={{ padding: '12px', borderBottom: '1px solid #eee', fontWeight: 'bold' }}>{total}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
             )}
           </section>
         </>

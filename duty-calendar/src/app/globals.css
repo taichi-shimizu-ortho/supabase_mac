@@ -18,4 +18,21 @@ html, body {
   background: #2563eb;
   border: none;
   padding: 2px 4px;
+  white-space: normal;
+  align-items: flex-start;
+}
+
+@media (max-width: 640px) {
+  .fc .fc-daygrid-event {
+    font-size: 0.7rem;
+    line-height: 1.2;
+  }
+
+  .fc .fc-daygrid-day-number {
+    font-size: 0.75rem;
+  }
+
+  .fc .fc-toolbar-title {
+    font-size: 1rem;
+  }
 }
