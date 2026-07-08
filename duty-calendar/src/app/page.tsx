@@ -209,18 +209,30 @@ export default function Home() {
 
   return (
     <main style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '2rem' }}>🏥 医師シフト管理</h1>
-        <div style={{ textAlign: 'right' }}>
+      <div style={{ display: 'flex', flexWrap: 'nowrap', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', gap: '8px' }}>
+        <h1
+          style={{
+            fontSize: 'clamp(1rem, 5vw, 2rem)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            minWidth: 0,
+          }}
+        >
+          🏥 医師シフト管理
+        </h1>
+        <div style={{ textAlign: 'right', flexShrink: 0 }}>
           <p style={{ fontSize: '0.9rem', color: '#666' }}>{user?.full_name}</p>
           <button
             onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
             style={{
-              padding: '8px 16px',
+              padding: '8px 12px',
               borderRadius: '4px',
               background: '#f3f4f6',
               border: '1px solid #ddd',
               cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              fontSize: 'clamp(0.75rem, 3vw, 1rem)',
             }}
           >
             ログアウト
