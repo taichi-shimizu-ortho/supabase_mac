@@ -104,7 +104,7 @@ python test_connection.py
 
 RLS で匿名アクセスを禁止しているため、CLI は起動時に管理者アカウントでサインインします。
 メールアドレスとパスワードを聞かれるので入力してください（`.env` は Git 管理されているため、パスワードは書かないこと）。
-`SUPABASE_EMAIL` / `SUPABASE_PASSWORD` を環境変数か Git 管理外の `.env.local` で渡すと入力を省略できます。
+`SUPABASE_EMAIL` / `SUPABASE_PASSWORD`（`.env.local` では `admin_mail` / `admin_password` でも可）を環境変数か Git 管理外の `.env.local` で渡すと入力を省略できます。
 
 ---
 

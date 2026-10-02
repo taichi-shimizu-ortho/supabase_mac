@@ -2,7 +2,7 @@
 
 RLS で匿名アクセスを禁止しているため、管理者アカウントでサインインしてから使う。
 .env は Git 管理されているため、パスワードは保存せず実行時に入力する
-(SUPABASE_PASSWORD を環境変数か Git 管理外の .env.local で渡した場合はそれを使う)。
+(SUPABASE_PASSWORD / admin_password を環境変数か Git 管理外の .env.local で渡した場合はそれを使う)。
 """
 
 import os
@@ -23,7 +23,8 @@ def get_client() -> Client:
         os.environ.get("SUPABASE_KEY")
     )
 
-    email = os.environ.get("SUPABASE_EMAIL") or input("管理者メールアドレス: ")
-    password = os.environ.get("SUPABASE_PASSWORD") or getpass("パスワード: ")
+    # .env.local では admin_mail / admin_password の名前でも書ける
+    email = os.environ.get("SUPABASE_EMAIL") or os.environ.get("admin_mail") or input("管理者メールアドレス: ")
+    password = os.environ.get("SUPABASE_PASSWORD") or os.environ.get("admin_password") or getpass("パスワード: ")
     client.auth.sign_in_with_password({"email": email, "password": password})
     return client
