@@ -167,8 +167,9 @@ class SummaryParser:
             raise ValueError(f"'{name}' に当たる医師が複数います ({names})。gcal_aliases.csv で指定してください")
         return candidates[0]["id"]
 
-    def parse(self, summary: str) -> tuple[str, int, str | None] | None:
-        """(医師ID, シフト種別ID, 備考) を返す。勤務の予定でなければ None、解釈できなければ ValueError"""
+    def parse(self, summary: str) -> tuple[str, int, str | None, str, bool] | None:
+        """(医師ID, シフト種別ID, 備考, 登録した勤務先, 交代か) を返す。
+        勤務の予定でなければ None、解釈できなければ ValueError"""
         text = normalize(summary)
         places = find_names(text, self.place_patterns)
         if not places:
@@ -183,10 +184,10 @@ class SummaryParser:
         # 登録名「稲築」で「(稲築病院)村田先生」も交代と判定できるよう、括弧内に勤務先があるかで見る
         swap = re.fullmatch(r"\(([^()]*)\)\s*(.*)", text)
         if swap and end <= swap.end(1):
-            return self.resolve_doctor(swap.group(2)), shift_type_id, swap.group(1).strip()
+            return self.resolve_doctor(swap.group(2)), shift_type_id, swap.group(1).strip(), place, True
         # 「当直」だけの予定は備考がシフト種別と重複するので空にする
         note = summary.strip()
-        return self.owner_id, shift_type_id, None if text == shift_name else note
+        return self.owner_id, shift_type_id, None if text == shift_name else note, place, False
 
 
 def load_mapping(path: str | None, default: str, key: str, value: str) -> dict[str, str]:
@@ -203,7 +204,7 @@ def load_mapping(path: str | None, default: str, key: str, value: str) -> dict[s
 
 
 def collect_entries(cals: list, months: list[str], parser: SummaryParser):
-    """指定月の勤務、解釈できなかった予定 (UIDは保護対象)、勤務以外の予定を返す"""
+    """指定月の勤務、解釈できなかった予定 (UIDは保護対象)、勤務以外の予定、交代済みで除いた予定を返す"""
     ranges = [month_range(m) for m in months]
     first = min(r[0] for r in ranges) - timedelta(days=1)
     last = max(r[1] for r in ranges) + timedelta(days=1)
@@ -212,7 +213,9 @@ def collect_entries(cals: list, months: list[str], parser: SummaryParser):
     errors: list[str] = []
     protected: set[str] = set()
     skipped: list[str] = []
+    superseded: list[str] = []
     seen: dict[tuple, Entry] = {}
+    occurrences = []
 
     # 複数のカレンダーに同じ予定が入っている場合は 1 回だけ数える
     events = {}
@@ -241,22 +244,29 @@ def collect_entries(cals: list, months: list[str], parser: SummaryParser):
             skipped.append(label)
             continue
 
-        doctor_id, shift_type_id, note = parsed
-        for d in dates:
-            entry = Entry(uid, d.isoformat(), doctor_id, shift_type_id, note, summary)
-            natural = (doctor_id, shift_type_id, entry.duty_date)
-            if natural in seen:
-                # 同じ日に同じ医師の外勤が2か所ある場合などは 1 件の勤務にまとめ、備考を並べる
-                prev = seen[natural]
-                notes = prev.note.split(" / ") if prev.note else []
-                if note and note not in notes:
-                    notes.append(note)
-                prev.note = " / ".join(notes) or None
-                prev.summary = f"{prev.summary} / {summary}"
-                continue
-            seen[natural] = entry
-            entries.append(entry)
-    return entries, errors, protected, skipped
+        occurrences += [(uid, d, summary, parsed) for d in dates]
+
+    # 交代の予定「(赤池)荒川先生」がある日は、同じ勤務先の自分の予定「赤池」が残っていても交代を優先する
+    # (元の予定を消さずに交代の予定を足した場合や、別のカレンダーに元の予定の写しがある場合)
+    swapped = {(d, place) for _, d, _, (_, _, _, place, is_swap) in occurrences if is_swap}
+    for uid, d, summary, (doctor_id, shift_type_id, note, place, is_swap) in occurrences:
+        if not is_swap and (d, place) in swapped:
+            superseded.append(f"{d.isoformat()} 「{summary}」")
+            continue
+        entry = Entry(uid, d.isoformat(), doctor_id, shift_type_id, note, summary)
+        natural = (doctor_id, shift_type_id, entry.duty_date)
+        if natural in seen:
+            # 同じ日に同じ医師の外勤が2か所ある場合などは 1 件の勤務にまとめ、備考を並べる
+            prev = seen[natural]
+            notes = prev.note.split(" / ") if prev.note else []
+            if note and note not in notes:
+                notes.append(note)
+            prev.note = " / ".join(notes) or None
+            prev.summary = f"{prev.summary} / {summary}"
+            continue
+        seen[natural] = entry
+        entries.append(entry)
+    return entries, errors, protected, skipped, superseded
 
 
 # ============================================================
@@ -359,7 +369,7 @@ def cli(months, ics_paths, places_path, aliases_path, owner, show_ignored, dry_r
     owner_id = matched[0]["id"]
     click.echo(f"👤 カレンダーの持ち主: {matched[0]['full_name']}")
     parser = SummaryParser(doctors, shift_types, places, aliases, owner_id)
-    entries, errors, protected, skipped = collect_entries(cals, months, parser)
+    entries, errors, protected, skipped, superseded = collect_entries(cals, months, parser)
 
     rows = []
     for m in months:
@@ -390,6 +400,8 @@ def cli(months, ics_paths, places_path, aliases_path, owner, show_ignored, dry_r
     for r in manual:
         if r["duty_doctor_id"] == owner_id:
             click.echo(f"  ？ 手入力のみ (残す)  {describe(r['duty_doctor_id'], r['shift_type_id'], r['duty_date'], r['note'])}")
+    for label in superseded:
+        click.echo(f"  ✕ 交代済みのため自分の勤務から除外  {label}")
     if show_ignored:
         for label in skipped:
             click.echo(f"  ・ 勤務先なしで無視  {label}")
