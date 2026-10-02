@@ -33,8 +33,8 @@ def list_assignments(month):
 
         # duty_date が該当月のものを取得
         res = supabase.table("assignments").select(
-            "id, doctor_id, shift_type_id, duty_date, note, " +
-            "profiles!assignments_doctor_id_fkey(full_name), shift_types(name)"
+            "id, duty_doctor_id, shift_type_id, duty_date, note, " +
+            "doctors!assignments_duty_doctor_id_fkey(full_name), shift_types(name)"
         ).gte("duty_date", f"{month}-01").lt("duty_date", next_month_str).order(
             "duty_date"
         ).execute()
@@ -49,7 +49,7 @@ def list_assignments(month):
         click.echo("─" * 80)
 
         for a in res.data:
-            doctor_name = a["profiles"]["full_name"]
+            doctor_name = a["doctors"]["full_name"]
             shift_name = a["shift_types"]["name"]
             note = a.get("note", "")
             click.echo(
@@ -68,10 +68,10 @@ def add(doctor, date, shift, note):
     """シフトを割り当てる"""
     try:
         # 医師を検索
-        doc_res = supabase.table("profiles").select("id").eq("full_name", doctor).eq(
+        doc_res = supabase.table("doctors").select("id").eq("full_name", doctor).eq(
             "is_active", True
         ).execute()
-        if not doc_res.data:
+        if len(doc_res.data) != 1:
             click.echo(f"❌ 医師 '{doctor}' が見つかりません（非アクティブの可能性）")
             return
         doctor_id = doc_res.data[0]["id"]
@@ -92,7 +92,7 @@ def add(doctor, date, shift, note):
 
         # インサート
         res = supabase.table("assignments").insert({
-            "doctor_id": doctor_id,
+            "duty_doctor_id": doctor_id,
             "shift_type_id": shift_type_id,
             "duty_date": date,
             "note": note
@@ -132,8 +132,8 @@ def doctor_shifts(doctor, month):
 
     try:
         # 医師を検索
-        doc_res = supabase.table("profiles").select("id").eq("full_name", doctor).execute()
-        if not doc_res.data:
+        doc_res = supabase.table("doctors").select("id").eq("full_name", doctor).execute()
+        if len(doc_res.data) != 1:
             click.echo(f"❌ 医師 '{doctor}' が見つかりません")
             return
         doctor_id = doc_res.data[0]["id"]
@@ -146,7 +146,7 @@ def doctor_shifts(doctor, month):
         # シフトを検索
         res = supabase.table("assignments").select(
             "id, duty_date, note, shift_types(name)"
-        ).eq("doctor_id", doctor_id).gte("duty_date", f"{month}-01").lt(
+        ).eq("duty_doctor_id", doctor_id).gte("duty_date", f"{month}-01").lt(
             "duty_date", next_month_str
         ).order("duty_date").execute()
 

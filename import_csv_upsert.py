@@ -35,8 +35,10 @@ if len(df) == 0:
 
 # 医師名から ID を取得
 print("📍 医師情報を取得中...")
-profiles_res = supabase.table("profiles").select("id, full_name").execute()
-doctor_map = {p["full_name"]: p["id"] for p in profiles_res.data}
+doctors_res = supabase.table("doctors").select("id, full_name").eq("is_active", True).execute()
+doctor_map = {}
+for doctor in doctors_res.data:
+    doctor_map.setdefault(doctor["full_name"], []).append(doctor["id"])
 
 # シフト種別マスタから ID を取得
 print("📍 シフト種別を取得中...")
@@ -56,6 +58,9 @@ for idx, row in df.iterrows():
     if doctor_name not in doctor_map:
         errors.append(f"行{idx+2}: 医師 '{doctor_name}' が見つかりません")
         continue
+    if len(doctor_map[doctor_name]) != 1:
+        errors.append(f"行{idx+2}: 医師 '{doctor_name}' が複数登録されています")
+        continue
 
     if shift_name not in shift_type_map:
         errors.append(f"行{idx+2}: シフト種別 '{shift_name}' が見つかりません")
@@ -69,7 +74,7 @@ for idx, row in df.iterrows():
         continue
 
     records.append({
-        "doctor_id": doctor_map[doctor_name],
+        "duty_doctor_id": doctor_map[doctor_name][0],
         "shift_type_id": shift_type_map[shift_name],
         "duty_date": row["duty_date"],
         "note": row["note"]
@@ -85,7 +90,7 @@ if records:
     try:
         res = supabase.table("assignments").upsert(
             records,
-            on_conflict="doctor_id,shift_type_id,duty_date"
+            on_conflict="duty_doctor_id,shift_type_id,duty_date"
         ).execute()
         print(f"✅ {len(res.data)} 件がインポートされました")
     except Exception as e:

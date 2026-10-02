@@ -19,7 +19,7 @@ def cli():
 
 @cli.command()
 def list_all():
-    """全医師一覧を表示"""
+    """ログイン利用者一覧を表示"""
     try:
         res = supabase.table("profiles").select(
             "id, full_name, role, is_active, created_at"
@@ -55,6 +55,7 @@ def add(id, name):
             "role": "doctor",
             "is_active": True
         }).execute()
+        # DB の profiles_create_doctor トリガーが同じトランザクションで勤務医を作成する。
 
         click.echo(f"✅ {name} を医師として登録しました")
         click.echo(f"   ID: {id}")
@@ -63,6 +64,56 @@ def add(id, name):
             click.echo(f"⚠️  既に登録されています")
         else:
             click.echo(f"❌ エラー: {e}")
+
+
+@cli.command()
+@click.option("--name", prompt="勤務医名", help="ログイン不要の医師名")
+def add_roster(name):
+    """ログイン権限を付けずに勤務担当医を登録"""
+    name = name.strip()
+    if not name:
+        raise click.BadParameter("医師名を入力してください")
+    try:
+        res = supabase.table("doctors").select("id").eq("full_name", name).execute()
+        if res.data:
+            click.echo(f"⚠️  {name} はすでに勤務医名簿にあります")
+            return
+        supabase.table("doctors").insert({"full_name": name}).execute()
+        click.echo(f"✅ {name} を勤務医名簿に登録しました（ログイン権限なし）")
+    except Exception as e:
+        click.echo(f"❌ エラー: {e}")
+
+
+@cli.command()
+def list_roster():
+    """ログイン利用者と独立した勤務担当医名簿を表示"""
+    try:
+        res = supabase.table("doctors").select(
+            "id, full_name, is_active, profile_id"
+        ).order("full_name").execute()
+        for doctor in res.data:
+            linked = "ログイン連携" if doctor["profile_id"] else "ログイン不要"
+            click.echo(f"{doctor['full_name']} | {linked} | active={doctor['is_active']}")
+    except Exception as e:
+        click.echo(f"❌ エラー: {e}")
+
+
+@cli.command()
+@click.option("--name", prompt="勤務医名", help="名簿に登録した表示名")
+@click.option("--active/--inactive", required=True, help="今後の勤務割当候補に表示するか")
+def set_roster_status(name, active):
+    """ログイン可否とは独立に勤務医の割当候補を切り替える"""
+    try:
+        res = supabase.table("doctors").select("id").eq("full_name", name).execute()
+        if len(res.data) != 1:
+            click.echo(f"❌ 勤務医 '{name}' が見つかりません")
+            return
+        supabase.table("doctors").update({"is_active": active}).eq(
+            "id", res.data[0]["id"]
+        ).execute()
+        click.echo(f"✅ {name} の勤務医名簿を{'有効' if active else '無効'}にしました")
+    except Exception as e:
+        click.echo(f"❌ エラー: {e}")
 
 
 @cli.command()
@@ -118,7 +169,7 @@ def set_doctor(name):
 @cli.command()
 @click.option("--name", prompt="医師名", help="対象医師")
 def disable(name):
-    """医師を無効化（表示されなくなる）"""
+    """ログイン利用者を無効化（勤務医名簿は変更しない）"""
     try:
         res = supabase.table("profiles").update({"is_active": False}).eq(
             "full_name", name
@@ -135,7 +186,7 @@ def disable(name):
 @cli.command()
 @click.option("--name", prompt="医師名", help="対象医師")
 def enable(name):
-    """医師を有効化"""
+    """ログイン利用者を有効化（勤務医名簿は変更しない）"""
     try:
         res = supabase.table("profiles").update({"is_active": True}).eq(
             "full_name", name

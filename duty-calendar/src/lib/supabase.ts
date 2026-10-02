@@ -19,6 +19,13 @@ export type Profile = {
   is_active: boolean
 }
 
+export type Doctor = {
+  id: string
+  full_name: string
+  is_active: boolean
+  profile_id: string | null
+}
+
 export type ShiftType = {
   id: number
   name: string
@@ -27,10 +34,10 @@ export type ShiftType = {
 
 export type Assignment = {
   id: string
-  doctor_id: string
+  duty_doctor_id: string
   shift_type_id: number
   duty_date: string
   note: string | null
-  profiles?: Profile
+  doctors?: Pick<Doctor, 'full_name'>
   shift_types?: ShiftType
 }
