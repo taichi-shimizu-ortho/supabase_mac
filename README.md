@@ -53,7 +53,8 @@
 3. **保存** をクリック
 
 既存の勤務を変更するには、カレンダーの予定をクリックし、医師・種別・日付・備考を変更して保存します。
-**Google でログイン**は認証機能のみで、Google カレンダーとの自動同期ではありません。
+**Google でログイン**は認証機能のみです。勤務表は Google カレンダーを正として、管理者が CLI（`import_gcal.py`）で取り込みます。
+Google カレンダーから取り込んだ勤務を画面で変更しても、次回の取り込みで Google カレンダーの内容に戻ります。変更は Google カレンダー側で行ってください。
 
 ---
 
@@ -215,6 +216,70 @@ python import_csv_upsert.py
 
 ---
 
+## 📆 Google カレンダーから取り込み（Google カレンダーが正）
+
+`import_gcal.py` は指定月の勤務を Google カレンダーの内容に合わせます（追加・変更・削除）。
+
+### 初回準備
+
+1. Supabase の SQL Editor で `supabase/migrations/20261002020000_add_gcal_uid_to_assignments.sql` を実行
+2. Google カレンダー → 対象カレンダーの「設定と共有」→ **iCal 形式の非公開アドレス** をコピー
+3. 実行時に聞かれたら貼り付ける（または環境変数 `GCAL_ICS_URL` で渡す）
+
+⚠️ 非公開アドレスは知っていれば誰でも予定を読めます。Git 管理の `.env` には書かないこと。漏れた場合は Google カレンダーの設定でリセットしてください。
+
+### 予定の書き方
+
+予定タイトルに **勤務医名簿の医師名** と **シフト種別名**（`当直` / `外勤`）を入れます。残りの文字は備考になります。
+
+| 予定タイトル | 取り込み結果 |
+|---|---|
+| `清水太郎 当直` | 清水太郎 / 当直 |
+| `当直：清水 太郎 (ER対応)` | 清水太郎 / 当直 / 備考「ER対応」 |
+| `外勤 福田`（終日・2日間） | 福田 / 外勤 を2日分 |
+| `医局会` | 医師名も種別もないので無視 |
+
+- 1つの予定に医師は1名
+- 終日予定は各日、時刻付きの予定は開始日（日本時間）の勤務になる。翌朝までの当直は開始日
+- 繰り返し予定も1回ずつ取り込む
+- 名字だけなど名簿と表記が違う場合は `gcal_aliases.csv` に対応を書く
+
+```csv
+alias,doctor_name
+清水,清水太郎
+```
+
+### 実行
+
+```bash
+# 変更内容の確認だけ
+uv run import_gcal.py --month 2026-11 --dry-run
+
+# 確認して反映（複数月も可）
+uv run import_gcal.py --month 2026-11 --month 2026-12
+
+# 手元の .ics ファイルから
+uv run import_gcal.py --month 2026-11 --ics calendar.ics
+```
+
+出力例：
+```
+  ＋ 追加  2026-11-10 福田 外勤
+  ～ 変更  2026-11-03 清水太郎 当直 → 2026-11-03 清水太郎 当直 (ER対応)
+  － 削除  2026-11-25 田中花子 外勤
+  ？ 手入力のみ (残す)  2026-11-26 田中花子 外勤
+  ・ 勤務以外として無視  2026-11-13 「医局会」
+
+⚠️  解釈できない予定 (この予定の既存勤務は変更しません):
+   2026-11-14 「当直 山田」: 勤務医名簿にある医師名が見つかりません (別名は gcal_aliases.csv に登録)
+```
+
+- Google カレンダーで消した・日付を変えた予定の勤務は削除される
+- アプリや CSV で手入力した勤務は、同じ医師・種別・日付の予定があれば Google 予定に紐付け、なければ残す（`--delete-manual` で削除）
+- 解釈できない予定は既存の勤務を変更しないので、予定を直してから再実行する
+
+---
+
 ## 🔄 ワークフロー例
 
 ### 初期セットアップ
@@ -242,6 +307,9 @@ python admin_shifts.py add --doctor "清水太郎" --date "2026-06-11" --shift "
 
 # 方法2: CSV で一括インポート
 # shifts.csv を編集 → python import_csv_upsert.py
+
+# 方法2': Google カレンダーから取り込み（推奨）
+uv run import_gcal.py --month "2026-06"
 
 # 方法3: 割り当て確認
 python admin_shifts.py list-assignments --month "2026-06"
@@ -330,7 +398,7 @@ uv sync
 | `profiles` | ログイン利用者・管理権限 | id (auth.users と同じ), full_name, role, is_active |
 | `doctors` | ログイン権限と独立した勤務担当医名簿 | id, full_name, is_active, profile_id (任意) |
 | `shift_types` | 勤務種別マスタ | id, name, color |
-| `assignments` | シフト割り当て | id, duty_doctor_id, shift_type_id, duty_date, note, doctor_id (旧互換) |
+| `assignments` | シフト割り当て | id, duty_doctor_id, shift_type_id, duty_date, note, gcal_uid (Google 予定 UID・手入力は null), doctor_id (旧互換) |
 | `monthly_counts` | 月別集計（ビュー） | doctor_id, shift_type_id, month, cnt |
 
 ### RLS ポリシー
