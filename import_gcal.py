@@ -123,7 +123,7 @@ class SummaryParser:
             shift_id = shift_ids.get(normalize(shift_name))
             if shift_id is None:
                 raise click.ClickException(f"勤務先 '{place}' のシフト種別 '{shift_name}' が shift_types にありません")
-            self.place_patterns.append((name_pattern(place), (place, shift_id)))
+            self.place_patterns.append((name_pattern(place), (place, shift_id, normalize(shift_name))))
 
         by_name = {normalize(d["full_name"]): d["id"] for d in doctors}
         self.doctor_patterns = [(name_pattern(d["full_name"]), d["id"]) for d in doctors]
@@ -165,14 +165,16 @@ class SummaryParser:
             return None
         if len({hit[2] for hit in places}) > 1:
             raise ValueError("勤務先が複数あります")
-        start, end, (place, shift_type_id) = places[0]
+        start, end, (place, shift_type_id, shift_name) = places[0]
 
-        before, after = text[:start].strip(), text[end:].strip()
-        if before == "(" and after.startswith(")"):
-            # 「(勤務先)医師名」: 自分の勤務を他の医師に交代してもらった
-            rest = after[1:].strip()
-            return self.resolve_doctor(rest), shift_type_id, place
-        return self.owner_id, shift_type_id, summary.strip()
+        # 「(勤務先)医師名」: 自分の勤務を他の医師に交代してもらった。
+        # 登録名「稲築」で「(稲築病院)村田先生」も交代と判定できるよう、括弧内に勤務先があるかで見る
+        swap = re.fullmatch(r"\(([^()]*)\)\s*(.*)", text)
+        if swap and end <= swap.end(1):
+            return self.resolve_doctor(swap.group(2)), shift_type_id, swap.group(1).strip()
+        # 「当直」だけの予定は備考がシフト種別と重複するので空にする
+        note = summary.strip()
+        return self.owner_id, shift_type_id, None if text == shift_name else note
 
 
 def load_mapping(path: str | None, default: str, key: str, value: str) -> dict[str, str]:
