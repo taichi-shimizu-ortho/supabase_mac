@@ -1,0 +1,26 @@
+"""CLI 共通の Supabase クライアント
+
+RLS で匿名アクセスを禁止しているため、管理者アカウントでサインインしてから使う。
+.env は Git 管理されているため、パスワードは保存せず実行時に入力する
+(SUPABASE_PASSWORD を環境変数で渡した場合はそれを使う)。
+"""
+
+import os
+from getpass import getpass
+
+from dotenv import load_dotenv
+from supabase import Client, create_client
+
+load_dotenv()
+
+
+def get_client() -> Client:
+    client = create_client(
+        os.environ.get("SUPABASE_URL"),
+        os.environ.get("SUPABASE_KEY")
+    )
+
+    email = os.environ.get("SUPABASE_EMAIL") or input("管理者メールアドレス: ")
+    password = os.environ.get("SUPABASE_PASSWORD") or getpass("パスワード: ")
+    client.auth.sign_in_with_password({"email": email, "password": password})
+    return client

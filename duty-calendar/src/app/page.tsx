@@ -23,35 +23,31 @@ export default function Home() {
   // カレンダー表示月
   const [displayMonth, setDisplayMonth] = useState(() => new Date().toISOString().slice(0, 7))
 
-  // ログイン処理
-  useEffect(() => {
-    const checkSession = async () => {
-      const { data } = await supabase.auth.getSession()
-      if (!data.session) {
-        setSession(false)
-        setLoading(false)
-        return
-      }
+  // 登録済みかつ有効な医師だけを通す。未登録の Google アカウントはここでサインアウトする
+  const startSession = async (userId: string) => {
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle()
 
-      setSession(true)
-
-      // ユーザープロフィール取得
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', data.session.user.id)
-        .single()
-
-      if (profileData) {
-        setUser(profileData)
-      }
-
-      // データ取得
-      await fetchData()
+    if (!profileData || !profileData.is_active) {
+      await supabase.auth.signOut()
+      setSession(false)
+      setLoading(false)
+      setError(
+        profileData
+          ? 'このアカウントは無効化されています。管理者に連絡してください。'
+          : 'このアカウントは登録されていません。登録済みのメールアドレスの Google アカウントでログインしてください。'
+      )
+      return
     }
 
-    checkSession()
-  }, [])
+    setError('')
+    setUser(profileData)
+    setSession(true)
+    await fetchData()
+  }
 
   // displayMonth が変わったときにカレンダーも同期
   useEffect(() => {
@@ -94,30 +90,59 @@ export default function Home() {
     }
   }
 
+  // ログイン処理
+  useEffect(() => {
+    const checkSession = async () => {
+      // Google ログインが Supabase 側で拒否された場合 (新規登録無効など) は URL にエラーが付いて戻る
+      const params = new URLSearchParams(window.location.search + window.location.hash.replace(/^#/, '&'))
+      const redirectError = params.get('error_description') || params.get('error')
+      if (redirectError) {
+        setError(`ログインできませんでした: ${redirectError}`)
+        window.history.replaceState(window.history.state, '', window.location.pathname)
+      }
+
+      // Google ログインの戻りでは、getSession が URL の code をセッションに交換してから返る
+      const { data } = await supabase.auth.getSession()
+      if (!data.session) {
+        setSession(false)
+        setLoading(false)
+        return
+      }
+
+      await startSession(data.session.user.id)
+    }
+
+    checkSession()
+    // 初回表示時だけ実行する
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // ログイン
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const email = (e.currentTarget.elements.namedItem('email') as HTMLInputElement).value
     const password = (e.currentTarget.elements.namedItem('password') as HTMLInputElement).value
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
       setError(error.message)
       return
     }
 
-    // 再度セッション確認
-    const { data } = await supabase.auth.getSession()
-    if (data.session) {
-      setSession(true)
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', data.session.user.id)
-        .single()
-      if (profileData) setUser(profileData)
-      await fetchData()
-    }
+    await startSession(data.user.id)
+  }
+
+  // Google ログイン (Android Chrome を含むブラウザ向けの Web OAuth フロー)
+  const handleGoogleLogin = async () => {
+    setError('')
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/`,
+        queryParams: { prompt: 'select_account' },
+      },
+    })
+    if (error) setError(error.message)
   }
 
   // 勤務追加
@@ -173,6 +198,23 @@ export default function Home() {
     return (
       <div style={{ maxWidth: 400, margin: '100px auto', padding: '24px' }}>
         <h1 style={{ fontSize: '1.5rem', marginBottom: '24px' }}>医師シフト管理</h1>
+        <button
+          type="button"
+          onClick={handleGoogleLogin}
+          style={{
+            width: '100%',
+            padding: '12px',
+            borderRadius: '8px',
+            background: 'white',
+            color: '#1f2937',
+            border: '1px solid #ddd',
+            cursor: 'pointer',
+            fontSize: '1rem',
+          }}
+        >
+          Google でログイン
+        </button>
+        <p style={{ textAlign: 'center', color: '#999', margin: '16px 0', fontSize: '0.85rem' }}>または</p>
         <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <input
             type="email"

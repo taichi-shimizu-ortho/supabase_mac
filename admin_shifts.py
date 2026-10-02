@@ -4,15 +4,12 @@
 import os
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from supabase import create_client
+from supabase_client import get_client
 import click
 
 load_dotenv()
 
-supabase = create_client(
-    os.environ.get("SUPABASE_URL"),
-    os.environ.get("SUPABASE_KEY")
-)
+supabase = get_client()
 
 
 @click.group()
