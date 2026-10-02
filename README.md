@@ -104,7 +104,7 @@ python test_connection.py
 
 RLS で匿名アクセスを禁止しているため、CLI は起動時に管理者アカウントでサインインします。
 メールアドレスとパスワードを聞かれるので入力してください（`.env` は Git 管理されているため、パスワードは書かないこと）。
-`SUPABASE_EMAIL` / `SUPABASE_PASSWORD` を環境変数で渡すと入力を省略できます。
+`SUPABASE_EMAIL` / `SUPABASE_PASSWORD` を環境変数か Git 管理外の `.env.local` で渡すと入力を省略できます。
 
 ---
 
@@ -224,7 +224,7 @@ python import_csv_upsert.py
 
 1. Supabase の SQL Editor で `supabase/migrations/20261002020000_add_gcal_uid_to_assignments.sql` を実行
 2. Google カレンダー → 対象カレンダーの「設定と共有」→ **iCal 形式の非公開アドレス** をコピー
-3. 実行時に聞かれたら貼り付ける（または環境変数 `GCAL_ICS_URL` で渡す）
+3. Git 管理外の `.env.local` に `GCAL_ICS_URL=<非公開アドレス>` と書く（書かなければ実行時に聞かれる）
 4. `gcal_places.csv` に勤務先とシフト種別を登録
 
 ```csv
@@ -237,7 +237,7 @@ place,shift_type
 
 勤務先は予定タイトルの一部に一致すればよい（`赤池` で「赤池」「赤池医院」の両方に一致）。
 
-⚠️ 非公開アドレスは知っていれば誰でも予定を読めます。Git 管理の `.env` には書かないこと。漏れた場合は Google カレンダーの設定でリセットしてください。
+⚠️ 非公開アドレスは知っていれば誰でも予定を読めます。Git 管理の `.env` ではなく `.env.local` に書くこと。漏れた場合は Google カレンダーの設定でリセットしてください。
 
 ### 予定の書き方
 

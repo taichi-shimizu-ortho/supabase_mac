@@ -8,3 +8,6 @@ wheels/
 
 # Virtual environments
 .venv
+
+# 秘密情報 (iCal 非公開アドレス、パスワードなど)
+.env.local

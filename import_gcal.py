@@ -27,7 +27,9 @@ import icalendar
 import recurring_ical_events
 from dotenv import load_dotenv
 
-load_dotenv()
+# GCAL_ICS_URL などの秘密情報は Git 管理外の .env.local に置く
+load_dotenv(Path(__file__).with_name(".env.local"))
+load_dotenv(Path(__file__).with_name(".env"))
 
 JST = ZoneInfo("Asia/Tokyo")
 DEFAULT_PLACES = "gcal_places.csv"
@@ -60,7 +62,7 @@ def load_calendar(ics_path: str | None) -> icalendar.Calendar:
     if ics_path:
         data = Path(ics_path).read_bytes()
     else:
-        # 非公開アドレスを知っていれば誰でも予定を読めるため、.env (Git 管理) には書かない
+        # 非公開アドレスを知っていれば誰でも予定を読めるため、.env (Git 管理) ではなく .env.local に書く
         url = os.environ.get("GCAL_ICS_URL") or getpass("Google カレンダーの iCal 非公開アドレス: ")
         with urllib.request.urlopen(url, timeout=30) as res:
             data = res.read()
