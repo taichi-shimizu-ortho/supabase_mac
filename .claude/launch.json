@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "duty-calendar",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "duty-calendar", "run", "dev"],
+      "port": 3000
+    }
+  ]
+}
