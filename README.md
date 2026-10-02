@@ -225,6 +225,7 @@ python import_csv_upsert.py
 1. Supabase の SQL Editor で `supabase/migrations/20261002020000_add_gcal_uid_to_assignments.sql` を実行
 2. Google カレンダー → 対象カレンダーの「設定と共有」→ **iCal 形式の非公開アドレス** をコピー
 3. Git 管理外の `.env.local` に `GCAL_ICS_URL=<非公開アドレス>` と書く（書かなければ実行時に聞かれる）
+   - 複数のカレンダーは `GCAL_ICS_URL_2`、`GCAL_ICS_URL_3` … と続けて書くとまとめて読む（同じ予定が両方にあっても1回だけ数える）
 4. `gcal_places.csv` に勤務先とシフト種別を登録
 
 ```csv

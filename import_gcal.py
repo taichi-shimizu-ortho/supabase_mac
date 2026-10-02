@@ -3,6 +3,7 @@
 
 Google カレンダーの「iCal 形式の非公開アドレス」(または .ics ファイル) を読み、
 指定月の勤務を Google カレンダーの内容に合わせて追加・変更・削除する。
+アドレスは .env.local の GCAL_ICS_URL, GCAL_ICS_URL_2, ... に書くと全カレンダーをまとめて読む。
 
 自分 (カレンダーの持ち主) の予定のうち、gcal_places.csv に登録した勤務先を含むものを取り込む。
   「赤池医院」             → 自分が勤務
@@ -58,15 +59,24 @@ def month_range(month: str) -> tuple[date, date]:
     return start, end
 
 
-def load_calendar(ics_path: str | None) -> icalendar.Calendar:
-    if ics_path:
-        data = Path(ics_path).read_bytes()
+def ics_urls() -> list[str]:
+    """GCAL_ICS_URL, GCAL_ICS_URL_2, GCAL_ICS_URL_3 ... の順に複数カレンダーのアドレスを返す"""
+    names = [k for k in os.environ if re.fullmatch(r"GCAL_ICS_URL(_\d+)?", k)]
+    names.sort(key=lambda k: int(k.rsplit("_", 1)[1]) if k[-1].isdigit() else 1)
+    return [os.environ[k] for k in names if os.environ[k].strip()]
+
+
+def load_calendars(ics_paths: tuple[str, ...]) -> list[icalendar.Calendar]:
+    if ics_paths:
+        sources = [Path(p).read_bytes() for p in ics_paths]
     else:
         # 非公開アドレスを知っていれば誰でも予定を読めるため、.env (Git 管理) ではなく .env.local に書く
-        url = os.environ.get("GCAL_ICS_URL") or getpass("Google カレンダーの iCal 非公開アドレス: ")
-        with urllib.request.urlopen(url, timeout=30) as res:
-            data = res.read()
-    return icalendar.Calendar.from_ical(data)
+        urls = ics_urls() or [getpass("Google カレンダーの iCal 非公開アドレス: ")]
+        sources = []
+        for url in urls:
+            with urllib.request.urlopen(url, timeout=30) as res:
+                sources.append(res.read())
+    return [icalendar.Calendar.from_ical(data) for data in sources]
 
 
 def occurrence_dates(event) -> list[date]:
@@ -192,7 +202,7 @@ def load_mapping(path: str | None, default: str, key: str, value: str) -> dict[s
         }
 
 
-def collect_entries(cal, months: list[str], parser: SummaryParser):
+def collect_entries(cals: list, months: list[str], parser: SummaryParser):
     """指定月の勤務、解釈できなかった予定 (UIDは保護対象)、勤務以外の予定を返す"""
     ranges = [month_range(m) for m in months]
     first = min(r[0] for r in ranges) - timedelta(days=1)
@@ -204,8 +214,12 @@ def collect_entries(cal, months: list[str], parser: SummaryParser):
     skipped: list[str] = []
     seen: dict[tuple, Entry] = {}
 
-    events = recurring_ical_events.of(cal).between(first, last)
-    for event in sorted(events, key=lambda e: (str(e["DTSTART"].dt), str(e.get("SUMMARY", "")))):
+    # 複数のカレンダーに同じ予定が入っている場合は 1 回だけ数える
+    events = {}
+    for cal in cals:
+        for event in recurring_ical_events.of(cal).between(first, last):
+            events.setdefault((str(event.get("UID", "")), str(event["DTSTART"].dt)), event)
+    for event in sorted(events.values(), key=lambda e: (str(e["DTSTART"].dt), str(e.get("SUMMARY", "")))):
         if str(event.get("STATUS", "")).upper() == "CANCELLED":
             continue
         dates = [d for d in occurrence_dates(event) if any(s <= d < e for s, e in ranges)]
@@ -234,7 +248,10 @@ def collect_entries(cal, months: list[str], parser: SummaryParser):
             if natural in seen:
                 # 同じ日に同じ医師の外勤が2か所ある場合などは 1 件の勤務にまとめ、備考を並べる
                 prev = seen[natural]
-                prev.note = " / ".join(n for n in (prev.note, note) if n) or None
+                notes = prev.note.split(" / ") if prev.note else []
+                if note and note not in notes:
+                    notes.append(note)
+                prev.note = " / ".join(notes) or None
                 prev.summary = f"{prev.summary} / {summary}"
                 continue
             seen[natural] = entry
@@ -295,7 +312,8 @@ def plan_sync(entries: list[Entry], rows: list[dict], protected: set[str]):
 
 @click.command()
 @click.option("--month", "months", multiple=True, required=True, help="対象月 (YYYY-MM)。複数指定可")
-@click.option("--ics", "ics_path", type=click.Path(exists=True, dir_okay=False), help="URL の代わりに .ics ファイルを読む")
+@click.option("--ics", "ics_paths", multiple=True, type=click.Path(exists=True, dir_okay=False),
+              help="URL の代わりに .ics ファイルを読む。複数指定可")
 @click.option("--places", "places_path", type=click.Path(exists=True, dir_okay=False),
               help=f"勤務先とシフト種別の対応表 CSV (place,shift_type)。既定: {DEFAULT_PLACES}")
 @click.option("--aliases", "aliases_path", type=click.Path(exists=True, dir_okay=False),
@@ -305,7 +323,7 @@ def plan_sync(entries: list[Entry], rows: list[dict], protected: set[str]):
 @click.option("--show-ignored", is_flag=True, help="勤務先を含まず無視した予定も表示する")
 @click.option("--dry-run", is_flag=True, help="変更内容を表示するだけで反映しない")
 @click.option("--yes", "-y", is_flag=True, help="確認せずに反映する")
-def cli(months, ics_path, places_path, aliases_path, owner, show_ignored, dry_run, yes):
+def cli(months, ics_paths, places_path, aliases_path, owner, show_ignored, dry_run, yes):
     """指定月の勤務を Google カレンダーの内容に合わせる"""
     for m in months:
         if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", m):
@@ -314,9 +332,10 @@ def cli(months, ics_path, places_path, aliases_path, owner, show_ignored, dry_ru
 
     click.echo("📍 Google カレンダーを読み込み中...")
     try:
-        cal = load_calendar(ics_path)
+        cals = load_calendars(ics_paths)
     except Exception as e:
         raise click.ClickException(f"カレンダーを読み込めませんでした: {e}")
+    click.echo(f"   {len(cals)} 件のカレンダーを読み込みました")
     places = load_mapping(places_path, DEFAULT_PLACES, "place", "shift_type")
     if not places:
         raise click.ClickException(f"勤務先が登録されていません。{DEFAULT_PLACES} に place,shift_type を書いてください")
@@ -340,7 +359,7 @@ def cli(months, ics_path, places_path, aliases_path, owner, show_ignored, dry_ru
     owner_id = matched[0]["id"]
     click.echo(f"👤 カレンダーの持ち主: {matched[0]['full_name']}")
     parser = SummaryParser(doctors, shift_types, places, aliases, owner_id)
-    entries, errors, protected, skipped = collect_entries(cal, months, parser)
+    entries, errors, protected, skipped = collect_entries(cals, months, parser)
 
     rows = []
     for m in months:
