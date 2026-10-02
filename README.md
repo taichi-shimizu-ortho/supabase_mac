@@ -26,7 +26,8 @@
 | **カレンダー** | 当月のシフトをカレンダー表示 |
 | **月選択** | カレンダーで月を切り替え → 集計も自動更新 |
 | **集計表示** | 選択月の当直・外勤回数を医師ごとに表示 |
-| **勤務追加** | 管理者のみ表示 - 医師のシフトを追加・編集 |
+| **勤務医追加** | 管理者のみ表示 - ログイン権限なしの医師を勤務表に登録 |
+| **勤務追加・変更** | 管理者のみ表示 - シフトを追加、カレンダーの予定をクリックして変更 |
 
 ### 画面の使い方
 
@@ -41,6 +42,8 @@
 - カレンダーで月を変更すると自動更新
 
 #### 👨‍⚕️ 勤務を追加（管理者のみ）
+医師が未登録なら、先に「勤務医を追加」で登録します（ログイン権限は作られません）。
+
 1. **追加** ボタンをクリック
 2. 以下を入力：
    - **医師を選択**: ドロップダウンから医師名を選択
@@ -48,6 +51,9 @@
    - **日付**: YYYY-MM-DD 形式
    - **備考**: オプション（ER対応など）
 3. **保存** をクリック
+
+既存の勤務を変更するには、カレンダーの予定をクリックし、医師・種別・日付・備考を変更して保存します。
+**Google でログイン**は認証機能のみで、Google カレンダーとの自動同期ではありません。
 
 ---
 
@@ -125,7 +131,7 @@ python admin_doctors.py list-all
 # 医師を追加 (Auth ユーザーをレジスタ)
 python admin_doctors.py add --id "550e8400-..." --name "清水太郎"
 
-# 医師を削除
+# ログイン利用者を削除（勤務医名簿・勤務履歴は残る）
 python admin_doctors.py delete --name "清水太郎"
 
 # 管理者に昇格
@@ -134,11 +140,19 @@ python admin_doctors.py set-admin --name "清水太郎"
 # 医師に降格
 python admin_doctors.py set-doctor --name "清水太郎"
 
-# 医師を無効化（非表示）
+# ログイン利用者を無効化（勤務医名簿はそのまま）
 python admin_doctors.py disable --name "清水太郎"
 
-# 医師を有効化
+# ログイン利用者を有効化
 python admin_doctors.py enable --name "清水太郎"
+
+# ログイン権限を付けずに勤務担当医だけ登録
+python admin_doctors.py add-roster --name "福田"
+python admin_doctors.py list-roster
+
+# 勤務医名簿での割当候補だけを無効化・再有効化（過去の勤務は残る）
+python admin_doctors.py set-roster-status --name "福田" --inactive
+python admin_doctors.py set-roster-status --name "福田" --active
 ```
 
 ### admin_shifts.py - シフト管理
@@ -313,9 +327,10 @@ uv sync
 
 | テーブル名 | 用途 | 主なカラム |
 |---|---|---|
-| `profiles` | 医師プロフィール | id, full_name, role, is_active |
+| `profiles` | ログイン利用者・管理権限 | id (auth.users と同じ), full_name, role, is_active |
+| `doctors` | ログイン権限と独立した勤務担当医名簿 | id, full_name, is_active, profile_id (任意) |
 | `shift_types` | 勤務種別マスタ | id, name, color |
-| `assignments` | シフト割り当て | id, doctor_id, shift_type_id, duty_date, note |
+| `assignments` | シフト割り当て | id, duty_doctor_id, shift_type_id, duty_date, note, doctor_id (旧互換) |
 | `monthly_counts` | 月別集計（ビュー） | doctor_id, shift_type_id, month, cnt |
 
 ### RLS ポリシー
@@ -323,6 +338,7 @@ uv sync
 | テーブル | ルール | 対象 |
 |---|---|---|
 | `profiles` | 有効な登録医師が読み取り可（自分の行は常に可） / 管理者のみ編集 | 管理者のみ INSERT/UPDATE/DELETE |
+| `doctors` | 有効な登録利用者が読み取り可 / 管理者のみ編集 | 管理者のみ INSERT/UPDATE/DELETE |
 | `assignments` | 有効な登録医師が読み取り可 / 管理者のみ編集 | 管理者のみ INSERT/UPDATE/DELETE |
 | `shift_types` | 有効な登録医師が読み取り可 / 管理者のみ編集 | 管理者のみ INSERT/UPDATE/DELETE |
 
@@ -344,9 +360,9 @@ uv sync
 
 **A:** はい。ブラウザ版（https://supabase-mac.vercel.app/）はレスポンシブ対応しており、スマートフォンで問題なく動作します。
 
-### Q: 医師が追加されません
+### Q: ログイン利用者が追加されません
 
-**A:** 以下を確認：
+**A:** アプリにログインさせる場合のみ以下を確認（勤務表に載せるだけなら画面の「勤務医を追加」を使用）：
 1. Supabase Auth でユーザーを作成した
 2. Python CLI で `admin_doctors.py add` で profiles に登録した
 3. 医師の `is_active` が `true` になっている

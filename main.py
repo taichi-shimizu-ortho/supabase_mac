@@ -20,7 +20,7 @@ def cli():
 def list_doctors():
     """医師一覧を表示"""
     try:
-        res = supabase.table("profiles").select("id, full_name, role, is_active").execute()
+        res = supabase.table("doctors").select("id, full_name, is_active, profile_id").execute()
         if not res.data:
             click.echo("医師がいません")
             return
@@ -29,8 +29,8 @@ def list_doctors():
         click.echo("─" * 70)
         for p in res.data:
             status = "✅" if p["is_active"] else "❌"
-            role = "👑 管理者" if p["role"] == "admin" else "医師"
-            click.echo(f"{status} {p['full_name']:<20} | {role}")
+            kind = "ログイン利用者と連携" if p["profile_id"] else "ログイン権限なし"
+            click.echo(f"{status} {p['full_name']:<20} | {kind}")
     except Exception as e:
         click.echo(f"❌ エラー: {e}")
 
@@ -74,8 +74,10 @@ def add_assignment(doctor, date, shift, note):
     """シフトを割り当てる（管理者のみ）"""
     try:
         # 医師を検索
-        doc_res = supabase.table("profiles").select("id").eq("full_name", doctor).execute()
-        if not doc_res.data:
+        doc_res = supabase.table("doctors").select("id").eq(
+            "full_name", doctor
+        ).eq("is_active", True).execute()
+        if len(doc_res.data) != 1:
             click.echo(f"❌ 医師 '{doctor}' が見つかりません")
             return
         doctor_id = doc_res.data[0]["id"]
@@ -89,7 +91,7 @@ def add_assignment(doctor, date, shift, note):
 
         # インサート
         res = supabase.table("assignments").insert({
-            "doctor_id": doctor_id,
+            "duty_doctor_id": doctor_id,
             "shift_type_id": shift_type_id,
             "duty_date": date,
             "note": note
