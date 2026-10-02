@@ -2,16 +2,19 @@
 
 RLS で匿名アクセスを禁止しているため、管理者アカウントでサインインしてから使う。
 .env は Git 管理されているため、パスワードは保存せず実行時に入力する
-(SUPABASE_PASSWORD を環境変数で渡した場合はそれを使う)。
+(SUPABASE_PASSWORD を環境変数か Git 管理外の .env.local で渡した場合はそれを使う)。
 """
 
 import os
 from getpass import getpass
+from pathlib import Path
 
 from dotenv import load_dotenv
 from supabase import Client, create_client
 
-load_dotenv()
+# 秘密情報は Git 管理外の .env.local に置く。既に設定済みの環境変数は上書きしない
+load_dotenv(Path(__file__).with_name(".env.local"))
+load_dotenv(Path(__file__).with_name(".env"))
 
 
 def get_client() -> Client:
