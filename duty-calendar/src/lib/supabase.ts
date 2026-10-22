@@ -7,9 +7,10 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables')
 }
 
-// Google ログインの戻りで URL の ?code= をセッションに交換する
+// ログインはメール・パスワードのみ。OAuth の戻りURLからはログインしない。
+// Google カレンダーの取り込みは import_gcal.py が独立して行う。
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: { flowType: 'pkce' },
+  auth: { flowType: 'pkce', detectSessionInUrl: false },
 })
 
 export type Profile = {

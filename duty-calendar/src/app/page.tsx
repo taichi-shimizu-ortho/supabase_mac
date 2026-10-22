@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useRef } from 'react'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import { supabase, type Profile, type Doctor, type ShiftType, type Assignment } from '@/lib/supabase'
+import { isPasswordSession } from '@/lib/auth-method'
 
 export default function Home() {
   const calendarRef = useRef<FullCalendar>(null)
@@ -14,6 +15,7 @@ export default function Home() {
   const [shiftTypes, setShiftTypes] = useState<ShiftType[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>('')
+  const [loggingIn, setLoggingIn] = useState(false)
 
   // 勤務医とログイン利用者は別名簿。外部勤務医に認証アカウントは作らない。
   const [doctorName, setDoctorName] = useState('')
@@ -26,22 +28,24 @@ export default function Home() {
   // カレンダー表示月
   const [displayMonth, setDisplayMonth] = useState(() => new Date().toISOString().slice(0, 7))
 
-  // 登録済みかつ有効な医師だけを通す。未登録の Google アカウントはここでサインアウトする
+  // 登録済みかつ有効な利用者だけを通す。
   const startSession = async (userId: string) => {
-    const { data: profileData } = await supabase
+    const { data: profileData, error: profileError } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', userId)
       .maybeSingle()
 
+    if (profileError) throw profileError
     if (!profileData || !profileData.is_active) {
-      await supabase.auth.signOut()
+      await supabase.auth.signOut({ scope: 'local' })
       setSession(false)
+      setUser(null)
       setLoading(false)
       setError(
         profileData
           ? 'このアカウントは無効化されています。管理者に連絡してください。'
-          : 'このアカウントは登録されていません。登録済みのメールアドレスの Google アカウントでログインしてください。'
+          : 'このアカウントは登録されていません。管理者に連絡してください。'
       )
       return
     }
@@ -100,26 +104,45 @@ export default function Home() {
   // ログイン処理
   useEffect(() => {
     const checkSession = async () => {
-      // Google ログインが Supabase 側で拒否された場合 (新規登録無効など) は URL にエラーが付いて戻る
-      const params = new URLSearchParams(window.location.search + window.location.hash.replace(/^#/, '&'))
-      const redirectError = params.get('error_description') || params.get('error')
-      if (redirectError) {
-        setError(`ログインできませんでした: ${redirectError}`)
-        window.history.replaceState(window.history.state, '', window.location.pathname)
-      }
+      try {
+        const { data, error: sessionError } = await supabase.auth.getSession()
+        if (sessionError) throw sessionError
+        if (!data.session) {
+          setLoading(false)
+          return
+        }
 
-      // Google ログインの戻りでは、getSession が URL の code をセッションに交換してから返る
-      const { data } = await supabase.auth.getSession()
-      if (!data.session) {
-        setSession(false)
+        // 以前の Google ログインが端末に残っていても、そのセッションは使わない。
+        const { data: assurance, error: assuranceError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel()
+        if (assuranceError) throw assuranceError
+        if (!assurance || !isPasswordSession(assurance.currentAuthenticationMethods)) {
+          await supabase.auth.signOut({ scope: 'local' })
+          setError('メールアドレスとパスワードでログインしてください。')
+          setLoading(false)
+          return
+        }
+
+        await startSession(data.session.user.id)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'ログイン状態を確認できませんでした。')
         setLoading(false)
-        return
       }
-
-      await startSession(data.session.user.id)
     }
 
     checkSession()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        setSession(false)
+        setUser(null)
+        setAssignments([])
+        setDoctors([])
+        setShiftTypes([])
+        setShowForm(false)
+        setEditingId(null)
+        setLoading(false)
+      }
+    })
+    return () => subscription.unsubscribe()
     // 初回表示時だけ実行する
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -130,26 +153,17 @@ export default function Home() {
     const email = (e.currentTarget.elements.namedItem('email') as HTMLInputElement).value
     const password = (e.currentTarget.elements.namedItem('password') as HTMLInputElement).value
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) {
-      setError(error.message)
-      return
-    }
-
-    await startSession(data.user.id)
-  }
-
-  // Google ログイン (Android Chrome を含むブラウザ向けの Web OAuth フロー)
-  const handleGoogleLogin = async () => {
+    setLoggingIn(true)
     setError('')
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/`,
-        queryParams: { prompt: 'select_account' },
-      },
-    })
-    if (error) setError(error.message)
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+      if (error) throw error
+      await startSession(data.user.id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'ログインできませんでした。')
+    } finally {
+      setLoggingIn(false)
+    }
   }
 
   const handleAddDoctor = async (e: React.FormEvent) => {
@@ -242,31 +256,16 @@ export default function Home() {
   }, [assignments, displayMonth])
 
   if (!session) {
+    if (loading) return <p style={{ padding: '24px' }}>読み込み中...</p>
     return (
       <div style={{ maxWidth: 400, margin: '100px auto', padding: '24px' }}>
         <h1 style={{ fontSize: '1.5rem', marginBottom: '24px' }}>医師シフト管理</h1>
-        <button
-          type="button"
-          onClick={handleGoogleLogin}
-          style={{
-            width: '100%',
-            padding: '12px',
-            borderRadius: '8px',
-            background: 'white',
-            color: '#1f2937',
-            border: '1px solid #ddd',
-            cursor: 'pointer',
-            fontSize: '1rem',
-          }}
-        >
-          Google でログイン
-        </button>
-        <p style={{ textAlign: 'center', color: '#999', margin: '16px 0', fontSize: '0.85rem' }}>または</p>
         <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <input
             type="email"
             name="email"
             placeholder="メールアドレス"
+            autoComplete="username"
             required
             style={{ padding: '12px', borderRadius: '8px', border: '1px solid #ddd' }}
           />
@@ -274,11 +273,13 @@ export default function Home() {
             type="password"
             name="password"
             placeholder="パスワード"
+            autoComplete="current-password"
             required
             style={{ padding: '12px', borderRadius: '8px', border: '1px solid #ddd' }}
           />
           <button
             type="submit"
+            disabled={loggingIn}
             style={{
               padding: '12px',
               borderRadius: '8px',
@@ -288,7 +289,7 @@ export default function Home() {
               cursor: 'pointer',
             }}
           >
-            ログイン
+            {loggingIn ? 'ログイン中...' : 'ログイン'}
           </button>
           {error && <p style={{ color: 'red' }}>{error}</p>}
         </form>
@@ -384,6 +385,7 @@ export default function Home() {
               ref={calendarRef}
               plugins={[dayGridPlugin]}
               initialView="dayGridMonth"
+              initialDate={`${displayMonth}-01`}
               height="auto"
               events={calendarEvents}
               headerToolbar={false}

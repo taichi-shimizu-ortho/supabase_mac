@@ -1,5 +1,9 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+アプリのログインはメール・パスワードのみです。Google カレンダーの取り込みは、親ディレクトリの `import_gcal.py` で行います。認証とデータ移行の手順は親ディレクトリの README を参照してください。
+
+検証: `npm run lint`、`npm test`（Node.js 22.18 以降）、`npm run build`。
+
 ## Getting Started
 
 First, run the development server:

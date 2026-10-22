@@ -14,10 +14,11 @@
 
 ### ログイン
 
-- **Google でログイン**: 登録済みのメールアドレスと同じ Google アカウントを選択（Android の Chrome でも可）
 - **メール・パスワード**: メールアドレスとパスワードを入力して **ログイン** をクリック
 
 ※ `profiles` に登録されていない、または無効化されたアカウントはログインできません。
+Google はカレンダーの取り込み専用です。Google アカウントでのログインは行いません。
+以前の Google ログインが端末に残っている場合も、メール・パスワードでログインし直してください。
 
 ### 機能
 
@@ -53,7 +54,7 @@
 3. **保存** をクリック
 
 既存の勤務を変更するには、カレンダーの予定をクリックし、医師・種別・日付・備考を変更して保存します。
-**Google でログイン**は認証機能のみです。勤務表は Google カレンダーを正として、管理者が CLI（`import_gcal.py`）で取り込みます。
+勤務表は Google カレンダーを正として、管理者が CLI（`import_gcal.py`）で取り込みます。Google ログインは不要です。
 Google カレンダーから取り込んだ勤務を画面で変更しても、次回の取り込みで Google カレンダーの内容に戻ります。変更は Google カレンダー側で行ってください。
 
 ---
@@ -486,6 +487,15 @@ uv sync
 ---
 
 ## 🚀 デプロイ
+
+### メール・パスワード専用ログインへの移行
+
+1. フロントエンドの変更をデプロイする。
+2. Supabase SQL Editor で `supabase/migrations/20261022070411_require_password_sessions.sql` を適用する。署名済み JWT の認証方法を使い、Google セッションからの勤務データ閲覧・操作も拒否する。既存のパスワード利用者と CLI は引き続き利用できる。
+3. Supabase Authentication の Google Provider を無効化する。Google カレンダーの iCal 非公開アドレスと、この設定は独立しているため、CLI の取り込みは継続できる。
+4. 既存の二重名簿は認証の変更だけでは解消しない。今回の整理案は `supabase/maintenance/20261022_merge_shimizu_doctors.sql` を参照。先に `supabase/migrations/20261022070424_prepare_doctor_merge_backup.sql` で退避先を用意する。整理 SQL は既定で `ROLLBACK` し、件数・備考・交代先を検査する。確認・承認後に末尾を `COMMIT` に変更して適用する。元の勤務と権限は、通常の API ロールがアクセスできないバックアップ表へ保存する。
+
+Auth ユーザーや Google の identity は削除しない。Google identity を持っていても、パスワード認証であれば利用できる。Google のみで利用していた人は、移行前にパスワードを設定して利用できることを確認する（[Supabase 公式説明](https://supabase.com/docs/guides/auth/auth-identity-linking#how-to-add-emailpassword-login-to-an-oauth-account)）。
 
 ### 現在の本番環境
 

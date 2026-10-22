@@ -357,13 +357,13 @@ def cli(months, ics_paths, places_path, aliases_path, owner, show_ignored, dry_r
     doctors = supabase.table("doctors").select("id, full_name, is_active, profile_id").execute().data
     shift_types = supabase.table("shift_types").select("id, name").execute().data
     if owner:
-        matched = [d for d in doctors if normalize(d["full_name"]) == normalize(owner)]
+        matched = [d for d in doctors if d["is_active"] and normalize(d["full_name"]) == normalize(owner)]
         if not matched:
-            raise click.ClickException(f"勤務医 '{owner}' が名簿にありません")
+            raise click.ClickException(f"有効な勤務医 '{owner}' が名簿にありません")
     else:
         session = supabase.auth.get_session()
         user_id = session.user.id if session else None
-        matched = [d for d in doctors if user_id and d["profile_id"] == user_id]
+        matched = [d for d in doctors if d["is_active"] and user_id and d["profile_id"] == user_id]
         if not matched:
             raise click.ClickException("サインインした利用者に紐付く勤務医がいません。--owner で自分の勤務医名を指定してください")
     owner_id = matched[0]["id"]
